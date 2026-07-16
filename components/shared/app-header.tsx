@@ -28,7 +28,7 @@ export function AppHeader({ viewer }: AppHeaderProps) {
           </div>
           {viewer.mode === "demo" ? (
             <Badge className="bg-white/15 text-white" variant="outline">
-              Demo Preview
+              Demo mode
             </Badge>
           ) : (
             <form action={signOutAction}>

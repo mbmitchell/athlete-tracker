@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAppViewer } from "@/lib/auth/session";
 import { getAthletesForViewer } from "@/lib/data/athletes";
+import { getAssignedWorkoutForViewerByDate } from "@/lib/data/workouts";
 import { cn } from "@/lib/utils";
 
 export default async function AthleteDashboardPage() {
@@ -21,6 +22,8 @@ export default async function AthleteDashboardPage() {
   const athletes = await getAthletesForViewer(viewer);
   const athlete = athletes[0];
   const today = new Date().toISOString().slice(0, 10);
+  const todayWorkout = await getAssignedWorkoutForViewerByDate(viewer, today);
+  const trainingStatus = todayWorkout ? todayWorkout.status.replaceAll("_", " ") : "No workout assigned";
 
   return (
     <div className="space-y-6">
@@ -31,28 +34,42 @@ export default async function AthleteDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 text-white/90 sm:grid-cols-3">
-          <DashboardMetric label="Today" value="Explosive lower body" />
-          <DashboardMetric label="Duration" value="65 minutes" />
-          <DashboardMetric label="Focus" value={athlete?.currentDevelopmentFocus || "Training assigned soon"} />
+          <DashboardMetric label="Today" value={trainingStatus} />
+          <DashboardMetric
+            label="Duration"
+            value={
+              todayWorkout?.estimatedDurationMinutes
+                ? `${todayWorkout.estimatedDurationMinutes} minutes`
+                : "Training assigned soon"
+            }
+          />
+          <DashboardMetric
+            label="Focus"
+            value={todayWorkout?.objective || athlete?.currentDevelopmentFocus || "Training assigned soon"}
+          />
         </CardContent>
       </Card>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle>This week</CardTitle>
+            <CardTitle>{todayWorkout ? "Today’s session" : "Welcome"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="rounded-2xl bg-muted/60 p-4">
-              <p className="font-semibold">Primary objective</p>
+              <p className="font-semibold">{todayWorkout ? "Session objective" : "What to expect"}</p>
               <p className="mt-2 text-muted-foreground">
-                {athlete?.currentDevelopmentFocus || "Assigned weekly focus will appear here once a training block is created."}
+                {todayWorkout?.objective ||
+                  athlete?.currentDevelopmentFocus ||
+                  "Your trainer will publish workouts here once your weekly plan is ready."}
               </p>
             </div>
             <div className="rounded-2xl bg-muted/60 p-4">
-              <p className="font-semibold">Available equipment</p>
+              <p className="font-semibold">{todayWorkout ? "Available equipment" : "Today’s training status"}</p>
               <p className="mt-2 text-muted-foreground">
-                {athlete?.availableEquipment.join(", ") || "No equipment profile added yet."}
+                {todayWorkout
+                  ? athlete?.availableEquipment.join(", ") || "No equipment profile added yet."
+                  : "No workout is assigned yet. Check back after your trainer publishes the next training day."}
               </p>
             </div>
           </CardContent>
@@ -63,7 +80,7 @@ export default async function AthleteDashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             <Link className={cn(buttonVariants({ size: "lg" }), "w-full")} href={`/workouts/${today}`}>
-              Open today’s workout
+              {todayWorkout ? "Open today’s workout" : "Check today’s training"}
             </Link>
             <Link className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-full")} href="/calendar">
               View weekly calendar

@@ -3,40 +3,55 @@
 ## Core identity and access
 
 - `user_profiles`
-  - application role metadata for each auth user
+  - app-facing role metadata for each Supabase auth user
 - `athletes`
-  - athlete profile plus owning admin/trainer
+  - athlete profile, owning admin, and athlete login-link state
 - `parent_athletes`
-  - parent-to-athlete link table
+  - parent-to-athlete relationship table
+
+## Athlete login-link fields
+
+Phase 2.1 keeps account-linking intentionally small by extending `athletes` instead of adding a separate invitation table.
+
+New `athletes` columns:
+
+- `athlete_login_status`
+  - `none`, `invited`, `connected`, `disabled`
+- `login_email`
+  - current invited or connected athlete email
+- `invited_at`
+- `connected_at`
+- `disabled_at`
+
+Existing `user_id` remains the linked auth user reference, but athlete access now depends on both:
+
+- `user_id`
+- `athlete_login_status`
+
+That means:
+
+- a disconnected athlete clears the auth link
+- a disabled athlete keeps historical linkage metadata
+- training history remains untouched by account actions
 
 ## Reusable library layer
 
 - `exercise_library`
-  - reusable exercise definitions owned by one admin
 - `workout_templates`
-  - reusable workout definitions owned by one admin
 - `workout_template_sections`
-  - ordered template sections
 - `workout_template_items`
-  - ordered template prescription rows
 
 ## Planning and assignment layer
 
 - `training_weeks`
-  - one athlete/week planning container
 - `assigned_workouts`
-  - athlete/date workout snapshot
 - `assigned_workout_sections`
-  - ordered section snapshot for that assigned workout
 - `assigned_workout_items`
-  - ordered prescription snapshot for that assigned workout
 
 ## Athlete completion layer
 
 - `workout_item_results`
-  - athlete-entered result rows keyed to assigned workout items
 - `athlete_readiness_logs`
-  - daily readiness entry, optionally linked to a specific assigned workout
 
 ## Relationship summary
 
@@ -47,6 +62,7 @@ user_profiles
   -> workout_templates.owner_user_id
 
 athletes
+  -> auth.users through athletes.user_id
   -> training_weeks.athlete_id
   -> assigned_workouts.athlete_id
   -> workout_item_results.athlete_id
@@ -73,6 +89,13 @@ assigned_workout_items
   -> workout_item_results.assigned_workout_item_id
 ```
 
+## Integrity constraints added for onboarding
+
+- one auth user cannot be actively linked to multiple athletes
+- one athlete cannot keep multiple active logins in this phase
+- admin and parent accounts are blocked from being connected as athlete logins
+- disabling or disconnecting a login does not delete athlete data
+
 ## Snapshot principle
 
-Templates and exercise-library records are reused only at assignment time. Once a workout is assigned, its sections and items are copied into the `assigned_*` tables. This prevents later template or exercise edits from changing historical athlete prescriptions.
+Templates and exercise-library records are reused only at assignment time. Once a workout is assigned, sections and items are copied into the `assigned_*` tables so later library edits do not rewrite historical athlete prescriptions.

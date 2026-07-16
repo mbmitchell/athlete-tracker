@@ -1,85 +1,68 @@
 # RLS Strategy
 
+## Core rule
+
+Athlete data is visible only when a relationship is both present and active.
+
+For athlete users, that now means:
+
+- `athletes.user_id = auth.uid()`
+- `athlete_login_status in ('invited', 'connected')`
+- `disabled_at is null`
+
+So disabling or disconnecting a login removes athlete access immediately without deleting workouts, readiness, or results.
+
 ## Helper functions
 
-Phase 2 adds these helper functions in SQL:
+Key SQL helpers now include:
 
-- `is_admin_owner(target_owner_user_id)`
+- `current_user_role()`
+- `can_manage_athlete(target_athlete_id)`
+- `is_active_athlete_login(target_athlete_id)`
+- `can_access_athlete(target_athlete_id)`
 - `is_self_athlete(target_athlete_id)`
 - `is_parent_linked(target_athlete_id)`
 - `can_view_workout_for_athlete(target_athlete_id, target_status)`
 - `can_edit_workout_progress_for_athlete(target_athlete_id)`
-- `assigned_workout_item_belongs_to_athlete(target_item_id, target_athlete_id)`
 
-All are `security definer` so RLS logic can resolve athlete relationships consistently from protected tables without duplicating joins in every policy. Their scope is intentionally narrow: they answer relationship questions, not broad data fetches.
+They stay narrow on purpose: each answers a relationship question so policies do not duplicate protected joins.
 
 ## Table policy intent
 
-### Admin-owned library tables
+### Athlete profile table
 
-- `exercise_library`
-- `workout_templates`
-- `workout_template_sections`
-- `workout_template_items`
+- admins can manage only athletes they own
+- athletes can view themselves only when their login link is active
+- parents can view only explicitly linked athletes
 
-Admins may manage only rows they own. Athletes and parents have no direct write path to these tables.
+### Planning and workout tables
 
-### Planning tables
-
-- `training_weeks`
-- `assigned_workouts`
-- `assigned_workout_sections`
-- `assigned_workout_items`
-
-Admins can fully manage their own athletes’ plans and assigned workout snapshots.
-
-Athletes and parents can view assigned workouts only when the workout is no longer in `draft`.
+- admins can fully manage workouts for their own athletes
+- athletes can view only non-draft workouts tied to their own active athlete link
+- parents can view only non-draft workouts tied to linked athletes
 
 ### Athlete-entered data
 
-- `workout_item_results`
-- `athlete_readiness_logs`
+- athletes can write only their own readiness and result rows
+- parents remain read-only
+- admins retain full management for owned athletes
 
-Athletes may insert and update only rows tied to their own athlete identity.
+## Account-linking safeguards
 
-Parents are read-only.
+The service-role client is used only for:
 
-Admins retain full visibility and management for their athletes.
+- sending athlete invitations
+- connecting an existing auth user to an athlete
+- resending invitations
+- disabling athlete logins
+- finalizing invite-to-connected status after first sign-in
 
-## Additional guardrail
+Normal athlete/workout/readiness/results access does not use the service role and continues to rely on authenticated user context plus RLS.
 
-RLS alone cannot express per-column update restrictions. Because athletes are allowed to update progress-related fields on `assigned_workouts`, Phase 2 also adds the trigger function `guard_assigned_workout_athlete_updates()`.
+## Additional guardrails
 
-That trigger rejects athlete attempts to change:
-
-- title
-- objective
-- workout date
-- source template
-- training week
-- admin notes
-- skip reason
-- created-by metadata
-
-This is the main protection preventing athletes from modifying prescription content while still allowing:
-
-- `status`
-- `athlete_notes`
-- `started_at`
-- `completed_at`
-
-## Published-workout visibility rule
-
-The central visibility rule is:
-
-- admins can always see workouts for athletes they manage
-- athletes can see only their own workouts when status is not `draft`
-- parents can see only linked-athlete workouts when status is not `draft`
-
-That same rule is reused for:
-
-- assigned workout rows
-- assigned workout sections
-- assigned workout items
-- workout result rows
-- readiness rows linked to assigned workouts
+- athlete login actions are server-only
+- the app verifies the requesting user is an admin before any service-role mutation runs
+- client components must not import the service-role client
+- demo mode is only allowed when public Supabase config is entirely absent
+- configured environments throw visible setup/runtime errors instead of silently using preview data

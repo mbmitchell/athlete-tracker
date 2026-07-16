@@ -1,14 +1,32 @@
 import { cache } from "react";
 
-import type { AdminDashboardCard, AppViewer, AthleteProfile, AthleteSummary } from "@/lib/types/domain";
+import type {
+  AdminDashboardCard,
+  AdminSetupSummary,
+  AppViewer,
+  AthleteProfile,
+  AthleteSummary
+} from "@/lib/types/domain";
+import { normalizeAthleteLoginStatus } from "@/lib/athletes/account-management";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { mockAdminDashboardCards, mockAthletes } from "@/lib/data/mock-data";
-import { isSupabaseConfigured } from "@/lib/env";
+import {
+  isDemoMode,
+  isSupabaseConfigured,
+  isSupabaseServiceRoleConfigured
+} from "@/lib/env";
+import { requireSupabaseResult } from "@/lib/supabase/errors";
 
 function mapAthlete(row: {
   id: string;
   first_name: string;
   last_name: string;
+  athlete_login_status: string | null;
+  login_email: string | null;
+  user_id: string | null;
+  invited_at: string | null;
+  connected_at: string | null;
+  disabled_at: string | null;
   graduation_year: number;
   date_of_birth: string | null;
   hometown: string;
@@ -41,7 +59,15 @@ function mapAthlete(row: {
     restrictionsOrInjuryNotes: row.restrictions_or_injury_notes ?? "",
     recruitingNotes: row.recruiting_notes ?? "",
     active: row.active,
-    currentDevelopmentFocus: row.current_development_focus ?? ""
+    currentDevelopmentFocus: row.current_development_focus ?? "",
+    accountConnection: {
+      status: normalizeAthleteLoginStatus(row.athlete_login_status),
+      email: row.login_email ?? "",
+      userId: row.user_id,
+      invitedAt: row.invited_at,
+      connectedAt: row.connected_at,
+      disabledAt: row.disabled_at
+    }
   };
 }
 
@@ -61,7 +87,7 @@ export const getAthletesForViewer = cache(async (viewer: AppViewer): Promise<Ath
     return [];
   }
 
-  const { data } = await query;
+  const data = requireSupabaseResult(await query, "Unable to load athletes");
   return data?.map(mapAthlete) ?? [];
 });
 
@@ -103,7 +129,7 @@ export const getAdminDashboardCardsForViewer = cache(
     const athleteIds = athletes.map((athlete) => athlete.id);
     const today = new Date().toISOString().slice(0, 10);
 
-    const [{ data: readinessRows }, { data: workoutRows }] = await Promise.all([
+    const [readinessResult, workoutResult] = await Promise.all([
       supabase
         .from("athlete_readiness_logs")
         .select("athlete_id, readiness_status, body_weight, development_focus, recorded_at")
@@ -115,6 +141,12 @@ export const getAdminDashboardCardsForViewer = cache(
         .in("athlete_id", athleteIds)
         .eq("workout_date", today)
     ]);
+
+    const readinessRows = requireSupabaseResult(
+      readinessResult,
+      "Unable to load athlete readiness rows"
+    );
+    const workoutRows = requireSupabaseResult(workoutResult, "Unable to load assigned workouts");
 
     type ReadinessRow = NonNullable<typeof readinessRows>[number];
 
@@ -147,3 +179,94 @@ export const getAdminDashboardCardsForViewer = cache(
     });
   }
 );
+
+export const getAdminSetupSummary = cache(async (viewer: AppViewer): Promise<AdminSetupSummary> => {
+  if (viewer.role !== "admin") {
+    throw new Error("Only admins can view setup details.");
+  }
+
+  if (!isSupabaseConfigured() || viewer.mode === "demo") {
+    return {
+      supabaseStatus: "demo",
+      serviceRoleStatus: isSupabaseServiceRoleConfigured() ? "configured" : "missing",
+      migrationsStatus: "unknown",
+      currentRole: viewer.role,
+      athleteCount: mockAthletes.length,
+      linkedAthleteAccountCount: mockAthletes.filter(
+        (athlete) => athlete.accountConnection.status === "connected"
+      ).length,
+      publishedWorkoutCount: 0,
+      checks: [
+        {
+          label: "Supabase connection",
+          status: "warn",
+          detail: "Demo mode is active. Connect a Supabase project before production onboarding."
+        },
+        {
+          label: "Persistence",
+          status: "warn",
+          detail: "Changes are not saved while demo mode is active."
+        }
+      ]
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const [
+    athletesResult,
+    linkedAthletesResult,
+    publishedWorkoutsResult,
+    healthCheckResult
+  ] = await Promise.all([
+    supabase.from("athletes").select("id", { count: "exact", head: true }).eq("managed_by", viewer.id),
+    supabase
+      .from("athletes")
+      .select("id", { count: "exact", head: true })
+      .eq("managed_by", viewer.id)
+      .eq("athlete_login_status", "connected"),
+    supabase
+      .from("assigned_workouts")
+      .select("id", { count: "exact", head: true })
+      .in("athlete_id", viewer.connectedAthleteIds.length > 0 ? viewer.connectedAthleteIds : ["00000000-0000-0000-0000-000000000000"])
+      .eq("status", "published"),
+    supabase.from("training_weeks").select("id", { count: "exact", head: true }).limit(1)
+  ]);
+
+  const athleteCount = athletesResult.count ?? 0;
+  const linkedAthleteAccountCount = linkedAthletesResult.count ?? 0;
+  const publishedWorkoutCount = publishedWorkoutsResult.count ?? 0;
+  const migrationsStatus =
+    athletesResult.error || linkedAthletesResult.error || healthCheckResult.error ? "unknown" : "ready";
+
+  return {
+    supabaseStatus: isDemoMode() ? "demo" : "configured",
+    serviceRoleStatus: isSupabaseServiceRoleConfigured() ? "configured" : "missing",
+    migrationsStatus,
+    currentRole: viewer.role,
+    athleteCount,
+    linkedAthleteAccountCount,
+    publishedWorkoutCount,
+    checks: [
+      {
+        label: "Supabase connection",
+        status: "pass",
+        detail: "Public client variables are configured and the app is using authenticated access."
+      },
+      {
+        label: "Migrations",
+        status: migrationsStatus === "ready" ? "pass" : "warn",
+        detail:
+          migrationsStatus === "ready"
+            ? "Core athlete and workout tables responded to operational checks."
+            : "One or more expected tables did not respond cleanly. Re-run migrations and verify setup."
+      },
+      {
+        label: "Service role",
+        status: isSupabaseServiceRoleConfigured() ? "pass" : "warn",
+        detail: isSupabaseServiceRoleConfigured()
+          ? "Server-side invitation and account-link actions are available."
+          : "Add SUPABASE_SERVICE_ROLE_KEY before inviting or linking athlete accounts."
+      }
+    ]
+  };
+});

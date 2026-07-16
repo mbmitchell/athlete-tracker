@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Settings } from "lucide-react";
 
 import { AthleteCard } from "@/components/athletes/athlete-card";
 import { buttonVariants } from "@/components/ui/button";
@@ -55,6 +55,10 @@ export default async function AdminDashboardPage() {
             <Link className={cn(buttonVariants({ size: "lg" }), "w-full")} href="/athletes/new">
               <PlusCircle className="mr-2 h-4 w-4" />
               Add athlete
+            </Link>
+            <Link className={cn(buttonVariants({ variant: "outline" }), "w-full")} href="/admin/setup">
+              <Settings className="mr-2 h-4 w-4" />
+              Open setup checks
             </Link>
           </CardContent>
         </Card>

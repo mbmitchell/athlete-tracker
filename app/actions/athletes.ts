@@ -2,23 +2,70 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
+import {
+  AthleteAccountActionError,
+  connectExistingAthleteAccount,
+  disableAthleteAccount,
+  disconnectAthleteAccount,
+  inviteAthleteAccount,
+  resendAthleteInvitation
+} from "@/lib/athletes/account-links.server";
+import { canManageAthleteAccounts } from "@/lib/athletes/account-management";
 import { getAppViewer } from "@/lib/auth/session";
+import { getSupabaseConfig, isSupabaseServiceRoleConfigured } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { athleteProfileSchema } from "@/lib/validation/athlete";
-import { getSupabaseConfig } from "@/lib/env";
 
-export async function saveAthleteProfileAction(formData: FormData) {
-  const viewer = await getAppViewer();
+const athleteAccountEmailSchema = z.object({
+  athleteId: z.string().min(1),
+  email: z.email().transform((value) => value.trim().toLowerCase())
+});
 
+function ensureAdminViewer(viewer: Awaited<ReturnType<typeof getAppViewer>>) {
   if (!viewer) {
     redirect("/login");
   }
 
-  if (viewer.role !== "admin") {
+  if (!canManageAthleteAccounts(viewer)) {
     redirect("/athlete");
   }
 
+  return viewer;
+}
+
+function revalidateAthleteAccountPaths(athleteId: string) {
+  revalidatePath("/admin");
+  revalidatePath("/admin/setup");
+  revalidatePath("/athletes");
+  revalidatePath(`/athletes/${athleteId}/edit`);
+}
+
+function redirectToAthleteAccountResult(athleteId: string, query: string) {
+  redirect(`/athletes/${athleteId}/edit?${query}`);
+}
+
+function getAthleteAccountErrorCode(error: unknown): string {
+  if (error instanceof AthleteAccountActionError) {
+    return error.code;
+  }
+
+  return "account_action_failed";
+}
+
+function ensureAccountMutationsConfigured(athleteId: string) {
+  if (!getSupabaseConfig()) {
+    redirectToAthleteAccountResult(athleteId, "status=demo_mode");
+  }
+
+  if (!isSupabaseServiceRoleConfigured()) {
+    redirectToAthleteAccountResult(athleteId, "error=service_role_missing");
+  }
+}
+
+export async function saveAthleteProfileAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
   const parsed = athleteProfileSchema.safeParse({
     athleteId: formData.get("athleteId"),
     firstName: formData.get("firstName"),
@@ -77,9 +124,7 @@ export async function saveAthleteProfileAction(formData: FormData) {
       redirect(`/athletes/${input.athleteId}/edit?error=save_failed`);
     }
 
-    revalidatePath("/admin");
-    revalidatePath("/athletes");
-    revalidatePath(`/athletes/${input.athleteId}/edit`);
+    revalidateAthleteAccountPaths(input.athleteId);
     redirect(`/athletes/${input.athleteId}/edit?status=saved`);
   }
 
@@ -90,6 +135,136 @@ export async function saveAthleteProfileAction(formData: FormData) {
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/setup");
   revalidatePath("/athletes");
   redirect(`/athletes/${data.id}/edit?status=created`);
+}
+
+export async function inviteAthleteAccountAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
+  const parsed = athleteAccountEmailSchema.safeParse({
+    athleteId: formData.get("athleteId"),
+    email: formData.get("email")
+  });
+
+  if (!parsed.success) {
+    redirect("/athletes?error=invalid_athlete_account_email");
+  }
+
+  ensureAccountMutationsConfigured(parsed.data.athleteId);
+
+  try {
+    await inviteAthleteAccount({
+      viewerId: viewer.id,
+      athleteId: parsed.data.athleteId,
+      email: parsed.data.email
+    });
+  } catch (error) {
+    redirectToAthleteAccountResult(
+      parsed.data.athleteId,
+      `error=${encodeURIComponent(getAthleteAccountErrorCode(error))}`
+    );
+  }
+
+  revalidateAthleteAccountPaths(parsed.data.athleteId);
+  redirectToAthleteAccountResult(parsed.data.athleteId, "status=invited");
+}
+
+export async function connectExistingAthleteAccountAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
+  const parsed = athleteAccountEmailSchema.safeParse({
+    athleteId: formData.get("athleteId"),
+    email: formData.get("email")
+  });
+
+  if (!parsed.success) {
+    redirect("/athletes?error=invalid_athlete_account_email");
+  }
+
+  ensureAccountMutationsConfigured(parsed.data.athleteId);
+
+  try {
+    await connectExistingAthleteAccount({
+      viewerId: viewer.id,
+      athleteId: parsed.data.athleteId,
+      email: parsed.data.email
+    });
+  } catch (error) {
+    redirectToAthleteAccountResult(
+      parsed.data.athleteId,
+      `error=${encodeURIComponent(getAthleteAccountErrorCode(error))}`
+    );
+  }
+
+  revalidateAthleteAccountPaths(parsed.data.athleteId);
+  redirectToAthleteAccountResult(parsed.data.athleteId, "status=connected");
+}
+
+export async function resendAthleteInvitationAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
+  const athleteId = String(formData.get("athleteId") ?? "");
+
+  if (!athleteId) {
+    redirect("/athletes?error=missing_athlete");
+  }
+
+  ensureAccountMutationsConfigured(athleteId);
+
+  try {
+    await resendAthleteInvitation({
+      viewerId: viewer.id,
+      athleteId
+    });
+  } catch (error) {
+    redirectToAthleteAccountResult(athleteId, `error=${encodeURIComponent(getAthleteAccountErrorCode(error))}`);
+  }
+
+  revalidateAthleteAccountPaths(athleteId);
+  redirectToAthleteAccountResult(athleteId, "status=invitation_resent");
+}
+
+export async function disableAthleteAccountAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
+  const athleteId = String(formData.get("athleteId") ?? "");
+
+  if (!athleteId) {
+    redirect("/athletes?error=missing_athlete");
+  }
+
+  ensureAccountMutationsConfigured(athleteId);
+
+  try {
+    await disableAthleteAccount({
+      viewerId: viewer.id,
+      athleteId
+    });
+  } catch (error) {
+    redirectToAthleteAccountResult(athleteId, `error=${encodeURIComponent(getAthleteAccountErrorCode(error))}`);
+  }
+
+  revalidateAthleteAccountPaths(athleteId);
+  redirectToAthleteAccountResult(athleteId, "status=login_disabled");
+}
+
+export async function disconnectAthleteAccountAction(formData: FormData) {
+  const viewer = ensureAdminViewer(await getAppViewer());
+  const athleteId = String(formData.get("athleteId") ?? "");
+
+  if (!athleteId) {
+    redirect("/athletes?error=missing_athlete");
+  }
+
+  ensureAccountMutationsConfigured(athleteId);
+
+  try {
+    await disconnectAthleteAccount({
+      viewerId: viewer.id,
+      athleteId
+    });
+  } catch (error) {
+    redirectToAthleteAccountResult(athleteId, `error=${encodeURIComponent(getAthleteAccountErrorCode(error))}`);
+  }
+
+  revalidateAthleteAccountPaths(athleteId);
+  redirectToAthleteAccountResult(athleteId, "status=login_disconnected");
 }

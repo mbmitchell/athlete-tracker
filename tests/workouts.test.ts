@@ -19,7 +19,8 @@ const adminViewer: AppViewer = {
   role: "admin",
   mode: "authenticated",
   athleteId: null,
-  connectedAthleteIds: ["athlete-colt", "athlete-lane"]
+  connectedAthleteIds: ["athlete-colt", "athlete-lane"],
+  accessState: "active"
 };
 
 const athleteViewer: AppViewer = {
@@ -29,7 +30,8 @@ const athleteViewer: AppViewer = {
   role: "athlete",
   mode: "authenticated",
   athleteId: "athlete-colt",
-  connectedAthleteIds: ["athlete-colt"]
+  connectedAthleteIds: ["athlete-colt"],
+  accessState: "active"
 };
 
 const parentViewer: AppViewer = {
@@ -39,7 +41,8 @@ const parentViewer: AppViewer = {
   role: "parent",
   mode: "authenticated",
   athleteId: null,
-  connectedAthleteIds: ["athlete-colt"]
+  connectedAthleteIds: ["athlete-colt"],
+  accessState: "active"
 };
 
 describe("workout access", () => {
