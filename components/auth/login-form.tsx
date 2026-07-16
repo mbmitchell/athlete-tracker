@@ -40,12 +40,13 @@ export function LoginForm({ error, redirectTo, demoMode }: LoginFormProps) {
           <input name="redirectTo" type="hidden" value={redirectTo ?? ""} />
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input autoComplete="email" id="email" name="email" placeholder="coach@club.com" required type="email" />
+            <Input autoComplete="email" className="min-h-12" id="email" name="email" placeholder="coach@club.com" required type="email" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
             <Input
               autoComplete="current-password"
+              className="min-h-12"
               id="password"
               name="password"
               placeholder="Enter your password"

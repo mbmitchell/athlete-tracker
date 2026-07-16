@@ -21,7 +21,7 @@ export function AppShell({ viewer, children }: AppShellProps) {
       <div className="page-shell">
         <AppHeader viewer={viewer} />
         {viewer.mode === "demo" ? <DemoModeBanner /> : null}
-        <main className="flex flex-col gap-6">{children}</main>
+        <main className="flex min-w-0 flex-col gap-6">{children}</main>
       </div>
       <MobileNav role={viewer.role} />
     </>

@@ -34,7 +34,7 @@ export function MobileNav({ role }: MobileNavProps) {
   const items = getNavigationItems(role);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/90 px-3 py-3 backdrop-blur sm:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/92 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:hidden">
       <div
         className={cn(
           "mx-auto grid max-w-md gap-2",
@@ -48,7 +48,7 @@ export function MobileNav({ role }: MobileNavProps) {
           return (
             <Link
               className={cn(
-                "flex flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition-colors",
+                "flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition-colors",
                 isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
               )}
               href={item.href}

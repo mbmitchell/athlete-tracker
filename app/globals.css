@@ -30,14 +30,18 @@
 
   html {
     @apply scroll-smooth;
+    max-width: 100%;
+    overflow-x: clip;
   }
 
   body {
     @apply min-h-screen bg-background text-foreground antialiased;
     background-image:
-      radial-gradient(circle at top left, rgba(125, 211, 252, 0.22), transparent 32%),
-      radial-gradient(circle at top right, rgba(251, 191, 36, 0.16), transparent 24%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.92));
+      radial-gradient(circle at top left, rgba(29, 78, 120, 0.42), transparent 28%),
+      radial-gradient(circle at top right, rgba(215, 164, 73, 0.16), transparent 24%),
+      linear-gradient(180deg, rgba(7, 19, 29, 0.12), rgba(243, 248, 252, 0.96) 30%, rgba(248, 250, 252, 0.98));
+    min-height: 100svh;
+    overflow-x: clip;
   }
 
   a {
@@ -47,7 +51,9 @@
 
 @layer components {
   .page-shell {
-    @apply mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-24 pt-4 sm:px-6 sm:pb-10;
+    @apply mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6;
+    padding-top: calc(0.875rem + env(safe-area-inset-top));
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
   }
 
   .section-card {
@@ -56,5 +62,20 @@
 
   .pill-label {
     @apply inline-flex items-center rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-secondary-foreground;
+  }
+}
+
+@media (min-width: 640px) {
+  .page-shell {
+    padding-bottom: calc(2.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    background-image:
+      radial-gradient(circle at top left, rgba(31, 95, 143, 0.36), transparent 28%),
+      radial-gradient(circle at top right, rgba(215, 164, 73, 0.12), transparent 22%),
+      linear-gradient(180deg, rgba(7, 19, 29, 0.2), rgba(243, 248, 252, 0.98) 28%, rgba(248, 250, 252, 1));
   }
 }

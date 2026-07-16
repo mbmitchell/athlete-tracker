@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { InstallHelpPanel } from "@/components/pwa/install-help-panel";
 import { DemoModeBanner } from "@/components/shared/demo-mode-banner";
 import { getAppViewer } from "@/lib/auth/session";
 import { getSupabasePublicConfigStatus } from "@/lib/env";
@@ -26,7 +27,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const configStatus = getSupabasePublicConfigStatus();
 
   return (
-    <div className="page-shell min-h-screen justify-center">
+    <div className="page-shell min-h-[100svh] justify-center">
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <section className="space-y-5">
           {configStatus === "missing" ? <DemoModeBanner /> : null}
@@ -49,6 +50,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <ValueCard label="Athlete" value="Own training only" />
             <ValueCard label="Parent" value="Linked athletes only" />
           </div>
+          <InstallHelpPanel compact />
         </section>
         <LoginForm demoMode={configStatus === "missing"} error={error} redirectTo={redirectTo} />
       </div>

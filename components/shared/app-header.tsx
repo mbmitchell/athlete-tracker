@@ -14,13 +14,14 @@ type AppHeaderProps = {
 
 export function AppHeader({ viewer }: AppHeaderProps) {
   const items = getNavigationItems(viewer.role);
+  const title = viewer.role === "athlete" ? "Athlete Hub" : "Athlete Development Hub";
 
   return (
-    <header className="section-card sticky top-3 z-30 overflow-hidden">
+    <header className="section-card sticky top-[max(0.75rem,env(safe-area-inset-top))] z-30 overflow-hidden">
       <div className="flex flex-col gap-4 bg-gradient-to-r from-primary/95 via-primary to-sky-700 px-5 py-5 text-primary-foreground">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
-            <div className="pill-label bg-white/15 text-white">Athlete Development Hub</div>
+            <div className="pill-label bg-white/15 text-white">{title}</div>
             <div>
               <p className="text-sm text-white/80">{roleLabels[viewer.role]}</p>
               <h1 className="text-xl font-semibold sm:text-2xl">{viewer.displayName}</h1>
@@ -32,7 +33,7 @@ export function AppHeader({ viewer }: AppHeaderProps) {
             </Badge>
           ) : (
             <form action={signOutAction}>
-              <Button className="border-white/20 bg-white/10 text-white hover:bg-white/20" type="submit" variant="outline">
+              <Button className="min-h-11 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20" type="submit" variant="outline">
                 Sign out
               </Button>
             </form>

@@ -8,6 +8,7 @@ The current foundation includes:
 - athlete profile management
 - weekly planning, workout assignment, and daily execution flows
 - structured week-plan importing with preview, exercise matching, and draft-only conflict handling
+- installable athlete-focused PWA branding with home-screen install guidance
 - Supabase-backed athlete account invitations and login linking
 - Vercel-ready environment setup
 - PWA metadata and installable manifest support
@@ -296,9 +297,42 @@ npm run typecheck
 npm run build
 ```
 
+## Installing Athlete Hub On iPhone
+
+1. Open the site in Safari.
+2. Tap `Share`.
+3. Tap `Add to Home Screen`.
+4. Tap `Add`.
+
+After installation, opening `Athlete Hub` from the home screen launches the standalone app shell and routes signed-in athletes to `/athlete`.
+
+## Installing Athlete Hub On Android
+
+1. Open the site in Chrome.
+2. Open the browser menu.
+3. Tap `Install app` or `Add to Home screen`.
+4. Confirm the install.
+
+The app uses the normal authenticated Supabase cookie session. No custom token storage is added for installed-PWA use.
+
+## Updating PWA Icons Later
+
+The branded icons are generated from these files:
+
+- [app/icon.tsx](/Users/mmitchell/dev/athlete-tracker/app/icon.tsx)
+- [app/apple-icon.tsx](/Users/mmitchell/dev/athlete-tracker/app/apple-icon.tsx)
+- [app/pwa-icons/icon-192/route.ts](/Users/mmitchell/dev/athlete-tracker/app/pwa-icons/icon-192/route.ts)
+- [app/pwa-icons/icon-512/route.ts](/Users/mmitchell/dev/athlete-tracker/app/pwa-icons/icon-512/route.ts)
+- [app/pwa-icons/maskable-512/route.ts](/Users/mmitchell/dev/athlete-tracker/app/pwa-icons/maskable-512/route.ts)
+- [lib/pwa/branding.tsx](/Users/mmitchell/dev/athlete-tracker/lib/pwa/branding.tsx)
+
+To refresh the monogram, colors, or baseball seam accents, update the shared renderer in `lib/pwa/branding.tsx` and rebuild.
+
 ## Known Limitations
 
 - The app currently supports one athlete login per athlete profile in this phase.
 - Parent account linking is still read-only and does not yet have a dedicated parent dashboard.
 - Re-enabling a disabled athlete account is not yet a separate admin action; the current safe path is to reconnect or re-invite deliberately.
 - The setup page uses safe operational checks rather than a guaranteed migration fingerprint.
+- The installed Android experience depends on the browser recognizing the manifest, secure context, and service-worker registration. This implementation intentionally does not add offline workout syncing or cached private data.
+- The minimal service worker exists only to support install surfaces and standalone launching. It does not cache athlete pages, results, or Supabase responses offline.
