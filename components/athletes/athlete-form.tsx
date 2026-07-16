@@ -29,6 +29,10 @@ const profileMessageMap = {
     "A required athlete field was missing before the record reached the database. Review the profile inputs and try again.",
   missing_organization_context:
     "The database reported missing organization context, but this app schema does not currently define organization-scoped athlete creation.",
+  missing_authenticated_session:
+    "The athlete create request reached the server without an authenticated Supabase session. Sign in again and retry.",
+  session_identity_mismatch:
+    "The authenticated Supabase user did not match the admin viewer identity for this request. Sign in again and retry.",
   missing_user_profile:
     "Your signed-in account is missing the required user profile row in Supabase. Create or repair the matching user_profiles record, then try again.",
   incomplete_user_profile:

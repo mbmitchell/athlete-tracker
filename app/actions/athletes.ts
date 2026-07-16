@@ -96,6 +96,17 @@ function logAthleteCreateFailure(params: {
   });
 }
 
+function logAthleteCreateDiagnostics(params: {
+  authUserId: string | null;
+  viewerId: string;
+  managedBy: string;
+  viewerRole: string;
+  profileExists: boolean;
+  profileIsAdmin: boolean;
+}) {
+  console.info("Athlete create diagnostics", params);
+}
+
 export async function saveAthleteProfileAction(formData: FormData) {
   const viewer = ensureAdminViewer(await getAppViewer());
   const parsed = athleteProfileSchema.safeParse({
@@ -157,9 +168,63 @@ export async function saveAthleteProfileAction(formData: FormData) {
     active: input.activeStatus === "active"
   };
 
+  const authResult = await supabase.auth.getUser();
+  const authUserId = authResult.data.user?.id ?? null;
+
+  if (authResult.error || !authUserId) {
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "missing_authenticated_session",
+      payload: {
+        managedBy: payload.managed_by
+      },
+      supabaseError: authResult.error
+        ? {
+            code: authResult.error.code,
+            message: authResult.error.message
+          }
+        : undefined
+    });
+
+    logAthleteCreateDiagnostics({
+      authUserId,
+      viewerId: viewer.id,
+      managedBy: payload.managed_by,
+      viewerRole: viewer.role,
+      profileExists: false,
+      profileIsAdmin: false
+    });
+
+    redirectToAthleteCreateError("missing_authenticated_session");
+  }
+
+  if (authUserId !== viewer.id || payload.managed_by !== authUserId) {
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "session_identity_mismatch",
+      payload: {
+        authUserId,
+        managedBy: payload.managed_by
+      }
+    });
+
+    logAthleteCreateDiagnostics({
+      authUserId,
+      viewerId: viewer.id,
+      managedBy: payload.managed_by,
+      viewerRole: viewer.role,
+      profileExists: false,
+      profileIsAdmin: false
+    });
+
+    redirectToAthleteCreateError("session_identity_mismatch");
+  }
+
   const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
-    .select("id, email, role")
+    .select("id, role")
     .eq("id", viewer.id)
     .maybeSingle();
 
@@ -199,8 +264,19 @@ export async function saveAthleteProfileAction(formData: FormData) {
   }
 
   const resolvedProfile = profile;
+  const profileExists = Boolean(resolvedProfile);
+  const profileIsAdmin = resolvedProfile?.role === "admin";
 
-  if (!resolvedProfile.email || !resolvedProfile.role) {
+  logAthleteCreateDiagnostics({
+    authUserId,
+    viewerId: viewer.id,
+    managedBy: payload.managed_by,
+    viewerRole: viewer.role,
+    profileExists,
+    profileIsAdmin
+  });
+
+  if (!resolvedProfile.role) {
     logAthleteCreateFailure({
       viewerId: viewer.id,
       viewerRole: viewer.role,

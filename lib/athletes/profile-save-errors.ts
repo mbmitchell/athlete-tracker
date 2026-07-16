@@ -4,6 +4,8 @@ export type AthleteProfileCreateErrorCode =
   | "invalid_athlete_profile"
   | "athlete_required_field_missing"
   | "missing_organization_context"
+  | "missing_authenticated_session"
+  | "session_identity_mismatch"
   | "missing_user_profile"
   | "incomplete_user_profile"
   | "admin_role_mismatch"
