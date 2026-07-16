@@ -45,6 +45,27 @@ function mapImportTypeToResultEntryType(itemType: ImportItemType): WorkoutResult
   }
 }
 
+function mergeRecordTrackingIntoInstructions(instructions: string, recordTracking: string) {
+  const trimmedInstructions = instructions.trim();
+  const trimmedRecordTracking = recordTracking.trim();
+
+  if (!trimmedRecordTracking) {
+    return trimmedInstructions;
+  }
+
+  const recordLine = `Record: ${trimmedRecordTracking}`;
+
+  if (!trimmedInstructions) {
+    return recordLine;
+  }
+
+  if (trimmedInstructions.includes(recordLine)) {
+    return trimmedInstructions;
+  }
+
+  return `${trimmedInstructions}\n${recordLine}`;
+}
+
 export function matchExerciseByName(
   itemName: string,
   exercises: ExerciseLibraryEntry[]
@@ -89,20 +110,23 @@ export function buildImportPreviewPlan(params: {
         items: section.items.map((item, itemIndex): ImportPreviewItem => {
           const matchedExercise = item.name ? matchExerciseByName(item.name, params.exercises) : null;
           const type = item.type ?? "text";
-          const recordType = item.record && item.record !== "nutrition" ? item.record : null;
+          const recordTracking = item.record ?? "";
 
           return {
             id: item.id || `${section.id}-item-${itemIndex + 1}`,
             lineNumber: item.lineNumber,
             name: matchedExercise?.name ?? item.name ?? `Custom activity ${itemIndex + 1}`,
             type,
-            resultEntryType: recordType
-              ? mapImportTypeToResultEntryType(recordType)
-              : matchedExercise?.defaultUnitType ?? mapImportTypeToResultEntryType(type),
+            resultEntryType: matchedExercise?.defaultUnitType ?? mapImportTypeToResultEntryType(type),
+            recordTracking,
+            recordTrackingValues: item.recordValues ?? [],
             matchedExerciseId: matchedExercise?.id ?? null,
             matchedExerciseName: matchedExercise?.name ?? null,
             matchStatus: matchedExercise ? "matched" : "custom",
-            instructions: item.instructions ?? matchedExercise?.coachingCues ?? "",
+            instructions: mergeRecordTrackingIntoInstructions(
+              item.instructions ?? matchedExercise?.coachingCues ?? "",
+              recordTracking
+            ),
             sets: item.sets ?? "",
             reps: item.reps ?? "",
             load: item.load ?? "",

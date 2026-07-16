@@ -74,6 +74,84 @@ function parseImportItemType(value: string): ImportItemType | null {
   return supportedImportItemTypes.find((itemType) => itemType === normalized) ?? null;
 }
 
+function parseRecordTracking(value: string) {
+  const trimmed = value.trim();
+
+  return {
+    raw: trimmed,
+    values: trimmed
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  };
+}
+
+const weekdayAliases = new Map<string, number>([
+  ["monday", 1],
+  ["mon", 1],
+  ["tuesday", 2],
+  ["tue", 2],
+  ["tues", 2],
+  ["wednesday", 3],
+  ["wed", 3],
+  ["thursday", 4],
+  ["thu", 4],
+  ["thur", 4],
+  ["thurs", 4],
+  ["friday", 5],
+  ["fri", 5],
+  ["saturday", 6],
+  ["sat", 6],
+  ["sunday", 0],
+  ["sun", 0]
+]);
+
+function resolveDayValue(value: string, weekStart: string | undefined): { date: string | null; error: string | null } {
+  const exactDate = parseIsoDate(value);
+
+  if (exactDate) {
+    return {
+      date: exactDate,
+      error: null
+    };
+  }
+
+  const normalizedWeekday = value.trim().toLowerCase();
+  const weekdayNumber = weekdayAliases.get(normalizedWeekday);
+
+  if (weekdayNumber === undefined) {
+    return {
+      date: null,
+      error: "Day must be a valid YYYY-MM-DD date or a weekday name between Monday and Sunday."
+    };
+  }
+
+  if (!weekStart) {
+    return {
+      date: null,
+      error: "A valid WEEK START must appear before using weekday names in DAY."
+    };
+  }
+
+  const cursor = new Date(`${weekStart}T00:00:00Z`);
+
+  for (let index = 0; index < 7; index += 1) {
+    if (cursor.getUTCDay() === weekdayNumber) {
+      return {
+        date: cursor.toISOString().slice(0, 10),
+        error: null
+      };
+    }
+
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return {
+    date: null,
+    error: `Day "${value}" could not be resolved inside the week beginning ${weekStart}.`
+  };
+}
+
 export function parseImportedPlan(input: string): ParsedPlan {
   const lines = input.split(/\r?\n/);
   const days: ParsedDay[] = [];
@@ -145,10 +223,10 @@ export function parseImportedPlan(input: string): ParsedPlan {
     }
 
     if (label === "DAY") {
-      const parsedDate = parseIsoDate(value);
+      const { date: parsedDate, error } = resolveDayValue(value, weekStart);
 
-      if (!parsedDate) {
-        pushIssue(errors, lineNumber, label, "Day must be a valid YYYY-MM-DD date.", originalLine);
+      if (!parsedDate && error) {
+        pushIssue(errors, lineNumber, label, error, originalLine);
       }
 
       currentDay = {
@@ -268,7 +346,7 @@ export function parseImportedPlan(input: string): ParsedPlan {
 
       seenItemFields.add(label);
 
-      if (label === "TYPE" || label === "RECORD") {
+      if (label === "TYPE") {
         const parsedType = parseImportItemType(value);
 
         if (!parsedType) {
@@ -279,11 +357,18 @@ export function parseImportedPlan(input: string): ParsedPlan {
             `Unsupported item type. Supported values: ${supportedImportItemTypes.join(", ")}.`,
             originalLine
           );
-        } else if (label === "TYPE") {
-          currentItem.type = parsedType;
         } else {
-          currentItem.record = parsedType;
+          currentItem.type = parsedType;
         }
+
+        continue;
+      }
+
+      if (label === "RECORD") {
+        const parsedRecord = parseRecordTracking(value);
+
+        currentItem.record = parsedRecord.raw;
+        currentItem.recordValues = parsedRecord.values;
 
         continue;
       }

@@ -80,7 +80,8 @@ export type ParsedItem = {
   lineNumber: number;
   name?: string;
   type?: ImportItemType;
-  record?: ImportItemType;
+  record?: string;
+  recordValues?: string[];
   instructions?: string;
   sets?: string;
   reps?: string;
@@ -101,6 +102,8 @@ export type ImportPreviewItem = {
   name: string;
   type: ImportItemType;
   resultEntryType: WorkoutResultType;
+  recordTracking: string;
+  recordTrackingValues: string[];
   matchedExerciseId: string | null;
   matchedExerciseName: string | null;
   matchStatus: ImportMatchStatus;

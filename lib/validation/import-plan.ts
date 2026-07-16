@@ -36,6 +36,8 @@ const importPreviewItemSchema = z.object({
   name: z.string(),
   type: importItemTypeSchema,
   resultEntryType: workoutResultTypeSchema,
+  recordTracking: z.string(),
+  recordTrackingValues: z.array(z.string()),
   matchedExerciseId: z.string().nullable(),
   matchedExerciseName: z.string().nullable(),
   matchStatus: z.enum(["matched", "custom"]),
