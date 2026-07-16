@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 204 40% 98%;
+    --foreground: 215 35% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 35% 14%;
+    --primary: 210 79% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 190 54% 93%;
+    --secondary-foreground: 208 40% 22%;
+    --muted: 204 35% 95%;
+    --muted-foreground: 215 15% 43%;
+    --accent: 29 91% 88%;
+    --accent-foreground: 24 60% 22%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 203 28% 86%;
+    --input: 203 28% 86%;
+    --ring: 210 79% 28%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(125, 211, 252, 0.22), transparent 32%),
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.16), transparent 24%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.92));
+  }
+
+  a {
+    @apply transition-colors;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-24 pt-4 sm:px-6 sm:pb-10;
+  }
+
+  .section-card {
+    @apply rounded-3xl border bg-card/95 shadow-soft backdrop-blur;
+  }
+
+  .pill-label {
+    @apply inline-flex items-center rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-secondary-foreground;
+  }
+}
