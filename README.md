@@ -7,6 +7,7 @@ The current foundation includes:
 - secure role separation for `admin`, `athlete`, and `parent`
 - athlete profile management
 - weekly planning, workout assignment, and daily execution flows
+- structured week-plan importing with preview, exercise matching, and draft-only conflict handling
 - Supabase-backed athlete account invitations and login linking
 - Vercel-ready environment setup
 - PWA metadata and installable manifest support
@@ -217,6 +218,72 @@ After your admin account is working, seed the starter baseball library from `/li
 ```sql
 select public.seed_baseball_starter_data('<admin-user-profile-id>');
 ```
+
+## Importing A Week Plan
+
+Admins can import a structured weekly draft from:
+
+- `/athletes/[athleteId]/import-plan`
+- the athlete directory `Import plan` button
+- the admin dashboard athlete cards
+- the weekly planner `Import plan` button
+
+Import workflow:
+
+1. Confirm the athlete and target week start.
+2. Paste labeled source text using the supported `LABEL: value` format.
+3. Click `Parse import text`.
+4. Review parser warnings or errors.
+5. Edit day details, remove items, and correct exercise matching before saving.
+6. Choose a conflict strategy:
+   - create only missing days
+   - replace selected draft workouts without athlete results
+7. Save the import. The app writes draft workouts only and never overwrites athlete progress.
+
+Supported labels:
+
+- `ATHLETE`
+- `WEEK START`
+- `WEEKLY FOCUS`
+- `DAY`
+- `TITLE`
+- `OBJECTIVE`
+- `ESTIMATED MINUTES`
+- `SECTION`
+- `ITEM`
+- `TYPE`
+- `INSTRUCTIONS`
+- `SETS`
+- `REPS`
+- `LOAD`
+- `DURATION`
+- `DISTANCE`
+- `TARGET`
+- `UNIT`
+- `REST`
+- `REQUIRED`
+- `RECORD`
+
+Supported import item types:
+
+- `checkbox`
+- `readiness`
+- `sets_reps`
+- `sets_reps_weight`
+- `duration`
+- `distance`
+- `velocity`
+- `numeric`
+- `rating`
+- `text`
+- `nutrition`
+
+Conflict rules:
+
+- existing draft workouts with no athlete progress can be replaced only when explicitly selected
+- published, in-progress, completed, or result-bearing days are protected and remain untouched
+- if no importable days remain after conflict checks, the save is blocked
+- failed saves roll back any newly created workouts and restore any replaced drafts
 
 ## Validation
 

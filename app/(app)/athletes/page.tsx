@@ -68,6 +68,12 @@ export default async function AthleteDirectoryPage() {
                     >
                       Open week
                     </Link>
+                    <Link
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-fit")}
+                      href={`/athletes/${athlete.id}/import-plan?weekStart=${getWeekStartIso(new Date().toISOString().slice(0, 10))}`}
+                    >
+                      Import plan
+                    </Link>
                   </div>
                 ) : null}
               </CardHeader>

@@ -6,9 +6,23 @@ import { redirect } from "next/navigation";
 import { getAppViewer } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseConfig } from "@/lib/env";
-import { getAssignedWorkoutForBuilder, getDailyWorkoutForViewer, getTrainingWeekForAdmin } from "@/lib/data/workouts";
+import { getAthleteByIdForViewer } from "@/lib/data/athletes";
+import {
+  getAssignedWorkoutForBuilder,
+  getDailyWorkoutForViewer,
+  getExistingImportWorkoutsForAdmin,
+  getTrainingWeekForAdmin
+} from "@/lib/data/workouts";
 import { getWorkoutTemplateByIdForViewer } from "@/lib/data/library";
+import { resolveImportConflicts } from "@/lib/import-plan/matching";
+import {
+  buildAssignedWorkoutSnapshotFromImportDay,
+  buildImportExecutionPlan,
+  stripAssignedWorkoutIdentity,
+  validateImportPreviewPlanForWeek
+} from "@/lib/import-plan/planning";
 import { assignedWorkoutSchema, trainingWeekSchema, workoutItemSchema, workoutSectionSchema } from "@/lib/validation/workouts";
+import { saveImportedPlanInputSchema } from "@/lib/validation/import-plan";
 import { calculateWorkoutProgress } from "@/lib/workouts/progress";
 import { canUnpublishWeek, getWorkoutStatusAfterSave } from "@/lib/workouts/status";
 import {
@@ -50,6 +64,16 @@ async function ensureTrainingWeek(
   viewerId: string,
   draft?: Partial<Pick<TrainingWeekDetail, "title" | "focus" | "adminNotes">>
 ) {
+  const { week } = await getOrCreateTrainingWeek(athleteId, weekStart, viewerId, draft);
+  return week;
+}
+
+async function getOrCreateTrainingWeek(
+  athleteId: string,
+  weekStart: string,
+  viewerId: string,
+  draft?: Partial<Pick<TrainingWeekDetail, "title" | "focus" | "adminNotes">>
+) {
   const supabase = await createSupabaseServerClient();
   const { data: existing } = await supabase
     .from("training_weeks")
@@ -59,7 +83,10 @@ async function ensureTrainingWeek(
     .maybeSingle();
 
   if (existing) {
-    return existing;
+    return {
+      week: existing,
+      created: false
+    };
   }
 
   const { data, error } = await supabase
@@ -80,7 +107,10 @@ async function ensureTrainingWeek(
     throw new Error(error?.message ?? "Unable to create training week.");
   }
 
-  return data;
+  return {
+    week: data,
+    created: true
+  };
 }
 
 async function loadManagedWorkoutOrThrow(viewerId: string, athleteId: string, workoutId: string) {
@@ -644,6 +674,251 @@ export async function manageWorkoutBuilderAction(formData: FormData) {
   revalidatePath(`/athletes/${athleteId}/weeks/${getWeekStartIso(String(formData.get("workoutDate") ?? new Date().toISOString().slice(0, 10)))}`);
   revalidatePath("/calendar");
   redirectWithStatus(workoutPath, "status=saved");
+}
+
+export async function saveImportedPlanAction(input: {
+  athleteId: string;
+  weekStart: string;
+  weeklyFocus: string;
+  strategy: "create_missing_days_only" | "replace_selected_drafts";
+  replaceWorkoutIds: string[];
+  plan: {
+    athleteId: string;
+    athleteName: string;
+    weekStart: string;
+    weeklyFocus: string;
+    days: Array<{
+      id: string;
+      lineNumber: number;
+      date: string;
+      title: string;
+      objective: string;
+      estimatedMinutes: number | null;
+      sections: Array<{
+        id: string;
+        lineNumber: number;
+        title: string;
+        items: Array<{
+          id: string;
+          lineNumber: number;
+          name: string;
+          type: "checkbox" | "readiness" | "sets_reps" | "sets_reps_weight" | "duration" | "distance" | "velocity" | "numeric" | "rating" | "text" | "nutrition";
+          resultEntryType: "checkbox" | "sets_reps" | "sets_reps_weight" | "duration" | "distance" | "velocity" | "count" | "text" | "numeric" | "percentage" | "rating";
+          matchedExerciseId: string | null;
+          matchedExerciseName: string | null;
+          matchStatus: "matched" | "custom";
+          instructions: string;
+          sets: string;
+          reps: string;
+          load: string;
+          duration: string;
+          distance: string;
+          target: string;
+          unit: string;
+          rest: string;
+          required: boolean;
+        }>;
+      }>;
+    }>;
+    warnings: Array<{
+      lineNumber: number;
+      field: string;
+      message: string;
+      originalLine: string;
+    }>;
+    errors: Array<{
+      lineNumber: number;
+      field: string;
+      message: string;
+      originalLine: string;
+    }>;
+  };
+}): Promise<{ ok: true; redirectTo: string } | { ok: false; error: string }> {
+  const viewer = await assertAdmin();
+
+  if (!getSupabaseConfig()) {
+    return {
+      ok: false,
+      error: "Demo mode is active. Imported workouts are not saved."
+    };
+  }
+
+  const parsed = saveImportedPlanInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Review the imported plan details and try again."
+    };
+  }
+
+  const data = parsed.data;
+  const athlete = await getAthleteByIdForViewer(viewer, data.athleteId);
+
+  if (!athlete) {
+    return {
+      ok: false,
+      error: "That athlete is no longer available for your admin account."
+    };
+  }
+
+  if (data.plan.athleteId !== data.athleteId) {
+    return {
+      ok: false,
+      error: "The imported preview no longer matches the selected athlete."
+    };
+  }
+
+  if (data.plan.errors.length > 0) {
+    return {
+      ok: false,
+      error: "Resolve the parser errors in the source text, then parse again before saving."
+    };
+  }
+
+  const validationErrors = validateImportPreviewPlanForWeek(data.plan, data.weekStart);
+
+  if (validationErrors.length > 0) {
+    return {
+      ok: false,
+      error: validationErrors[0]
+    };
+  }
+
+  const existingWorkouts = await getExistingImportWorkoutsForAdmin(viewer, data.athleteId);
+  const conflicts = resolveImportConflicts({
+    days: data.plan.days,
+    existingWorkouts
+  });
+  const executionPlan = buildImportExecutionPlan({
+    days: data.plan.days,
+    conflicts,
+    strategy: data.strategy,
+    replaceWorkoutIds: data.replaceWorkoutIds
+  });
+
+  if (executionPlan.blockingErrors.length > 0) {
+    return {
+      ok: false,
+      error: executionPlan.blockingErrors[0]
+    };
+  }
+
+  const replacementSnapshots = [];
+
+  for (const replacement of executionPlan.replaceDays) {
+    const existingWorkout = await getAssignedWorkoutForBuilder(viewer, data.athleteId, replacement.existingWorkoutId);
+
+    if (!existingWorkout) {
+      return {
+        ok: false,
+        error: `The draft workout on ${replacement.day.date} could not be reloaded. Refresh and try again.`
+      };
+    }
+
+    replacementSnapshots.push({
+      existingWorkoutId: replacement.existingWorkoutId,
+      snapshot: stripAssignedWorkoutIdentity(existingWorkout)
+    });
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { week, created } = await getOrCreateTrainingWeek(data.athleteId, data.weekStart, viewer.id, {
+    title: `Week of ${data.weekStart}`,
+    focus: data.weeklyFocus,
+    adminNotes: ""
+  });
+  const createdWorkoutIds: string[] = [];
+
+  try {
+    for (const replacement of executionPlan.replaceDays) {
+      const { error } = await supabase
+        .from("assigned_workouts")
+        .delete()
+        .eq("id", replacement.existingWorkoutId)
+        .eq("athlete_id", data.athleteId)
+        .eq("status", "draft");
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
+    for (const day of executionPlan.createDays) {
+      const createdWorkoutId = await insertAssignedWorkoutSnapshot(
+        supabase,
+        buildAssignedWorkoutSnapshotFromImportDay({
+          athleteId: data.athleteId,
+          trainingWeekId: week.id,
+          day
+        }),
+        viewer.id
+      );
+      createdWorkoutIds.push(createdWorkoutId);
+    }
+
+    for (const replacement of executionPlan.replaceDays) {
+      const createdWorkoutId = await insertAssignedWorkoutSnapshot(
+        supabase,
+        buildAssignedWorkoutSnapshotFromImportDay({
+          athleteId: data.athleteId,
+          trainingWeekId: week.id,
+          day: replacement.day
+        }),
+        viewer.id
+      );
+      createdWorkoutIds.push(createdWorkoutId);
+    }
+
+    const { error: weekError } = await supabase
+      .from("training_weeks")
+      .update({
+        title: `Week of ${data.weekStart}`,
+        focus: data.weeklyFocus,
+        status: "draft"
+      })
+      .eq("id", week.id);
+
+    if (weekError) {
+      throw new Error(weekError.message);
+    }
+  } catch (error) {
+    for (const workoutId of createdWorkoutIds) {
+      await supabase.from("assigned_workouts").delete().eq("id", workoutId);
+    }
+
+    for (const replacement of replacementSnapshots) {
+      await insertAssignedWorkoutSnapshot(supabase, replacement.snapshot, viewer.id);
+    }
+
+    if (created) {
+      await supabase.from("training_weeks").delete().eq("id", week.id);
+    }
+
+    const message =
+      error instanceof Error && error.message.toLowerCase().includes("duplicate key")
+        ? "Another workout was created for one of these dates while you were importing. Refresh and try again."
+        : "The import could not be saved. Existing workouts were left in place.";
+
+    return {
+      ok: false,
+      error: message
+    };
+  }
+
+  const status = executionPlan.skippedDays.length > 0 ? "imported_partial" : "imported";
+  const weekPath = `/athletes/${data.athleteId}/weeks/${data.weekStart}`;
+
+  revalidatePath(weekPath);
+  revalidatePath(`/athletes/${data.athleteId}/import-plan`);
+  revalidatePath("/athletes");
+  revalidatePath("/calendar");
+  revalidatePath("/admin");
+
+  return {
+    ok: true,
+    redirectTo: `${weekPath}?status=${status}`
+  };
 }
 
 export async function assignTemplateFromLibraryAction(formData: FormData) {

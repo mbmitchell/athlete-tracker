@@ -7,9 +7,10 @@ import { getTrainingWeekForAdmin } from "@/lib/data/workouts";
 
 type AthleteWeekPageProps = {
   params: Promise<{ athleteId: string; weekStart: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function AthleteWeekPage({ params }: AthleteWeekPageProps) {
+export default async function AthleteWeekPage({ params, searchParams }: AthleteWeekPageProps) {
   const viewer = await getAppViewer();
 
   if (!viewer) {
@@ -21,6 +22,7 @@ export default async function AthleteWeekPage({ params }: AthleteWeekPageProps) 
   }
 
   const { athleteId, weekStart } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const [week, templates] = await Promise.all([
     getTrainingWeekForAdmin(viewer, athleteId, weekStart),
     getWorkoutTemplatesForViewer(viewer)
@@ -30,5 +32,14 @@ export default async function AthleteWeekPage({ params }: AthleteWeekPageProps) 
     redirect("/athletes");
   }
 
-  return <WeekPlanner templates={templates} week={week} />;
+  return (
+    <WeekPlanner
+      feedback={{
+        error: typeof resolvedSearchParams?.error === "string" ? resolvedSearchParams.error : undefined,
+        status: typeof resolvedSearchParams?.status === "string" ? resolvedSearchParams.status : undefined
+      }}
+      templates={templates}
+      week={week}
+    />
+  );
 }

@@ -12,11 +12,41 @@ import { cn } from "@/lib/utils";
 type WeekPlannerProps = {
   week: TrainingWeekDetail;
   templates: WorkoutTemplate[];
+  feedback?: {
+    status?: string;
+    error?: string;
+  };
 };
 
-export function WeekPlanner({ week, templates }: WeekPlannerProps) {
+const weekMessageMap = {
+  saved: "Week plan saved.",
+  imported: "Plan imported as draft workouts.",
+  imported_partial: "Plan imported, but one or more occupied days were skipped.",
+  demo_mode: "Demo mode is active. Changes are not saved.",
+  action_failed: "The week update could not be completed.",
+  invalid_week: "Review the week details and try again.",
+  delete_only_drafts: "Only draft workouts can be deleted from the weekly planner.",
+  no_prior_week: "No prior week was available to copy.",
+  week_has_results: "This week already contains athlete progress, so it cannot be unpublished."
+} as const;
+
+export function WeekPlanner({ week, templates, feedback }: WeekPlannerProps) {
+  const statusMessage = feedback?.status
+    ? weekMessageMap[feedback.status as keyof typeof weekMessageMap]
+    : null;
+  const errorMessage = feedback?.error
+    ? weekMessageMap[feedback.error as keyof typeof weekMessageMap]
+    : null;
+
   return (
     <div className="space-y-6">
+      {statusMessage ? (
+        <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-700">{statusMessage}</div>
+      ) : null}
+      {errorMessage ? (
+        <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{errorMessage}</div>
+      ) : null}
+
       <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="pill-label">Weekly plan</p>
@@ -26,6 +56,12 @@ export function WeekPlanner({ week, templates }: WeekPlannerProps) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            href={`/athletes/${week.athleteId}/import-plan?weekStart=${week.weekStartDate}`}
+          >
+            Import plan
+          </Link>
           <form action={manageWeekPlanAction}>
             <input name="intent" type="hidden" value="copy_prior_week" />
             <input name="athleteId" type="hidden" value={week.athleteId} />

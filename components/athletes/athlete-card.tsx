@@ -2,8 +2,11 @@ import Link from "next/link";
 import { ArrowUpRight, Activity, GraduationCap, MapPin } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AdminDashboardCard } from "@/lib/types/domain";
+import { getWeekStartIso } from "@/lib/workouts/date";
+import { cn } from "@/lib/utils";
 
 const statusBadgeMap = {
   draft: "outline",
@@ -26,6 +29,8 @@ type AthleteCardProps = {
 };
 
 export function AthleteCard({ card }: AthleteCardProps) {
+  const weekStart = getWeekStartIso(new Date().toISOString().slice(0, 10));
+
   return (
     <Card className="h-full">
       <CardHeader className="gap-3">
@@ -73,6 +78,17 @@ export function AthleteCard({ card }: AthleteCardProps) {
             Latest body weight
           </div>
           <span className="font-semibold">{card.latestBodyWeight}</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Link className={cn(buttonVariants({ size: "sm" }), "w-full")} href={`/athletes/${card.athleteId}/weeks/${weekStart}`}>
+            Open week
+          </Link>
+          <Link
+            className={cn(buttonVariants({ size: "sm", variant: "outline" }), "w-full")}
+            href={`/athletes/${card.athleteId}/import-plan?weekStart=${weekStart}`}
+          >
+            Import plan
+          </Link>
         </div>
       </CardContent>
     </Card>

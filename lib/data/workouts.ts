@@ -2,6 +2,7 @@ import { cache } from "react";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/env";
+import { requireSupabaseResult } from "@/lib/supabase/errors";
 import {
   getMockAssignedWorkoutByDate,
   getMockAssignedWorkoutById,
@@ -9,6 +10,7 @@ import {
   getMockWeekDays,
   mockAssignedWorkouts
 } from "@/lib/data/mock-data";
+import type { ExistingImportWorkout } from "@/lib/import-plan/types";
 import type {
   AppViewer,
   AssignedWorkout,
@@ -504,4 +506,135 @@ export const getAllAssignedWorkoutsForViewer = cache(
 
 export const getAthleteOptionsForViewer = cache(
   async (viewer: AppViewer): Promise<AthleteSummary[]> => getAthleteSummariesForViewer(viewer)
+);
+
+export const getExistingImportWorkoutsForAdmin = cache(
+  async (viewer: AppViewer, athleteId: string): Promise<ExistingImportWorkout[]> => {
+    if (viewer.role !== "admin") {
+      return [];
+    }
+
+    const athlete = await getAthleteByIdForViewer(viewer, athleteId);
+
+    if (!athlete) {
+      return [];
+    }
+
+    if (!isSupabaseConfigured() || viewer.mode === "demo") {
+      return mockAssignedWorkouts
+        .filter((workout) => workout.athleteId === athleteId)
+        .map((workout) => ({
+          id: workout.id,
+          workoutDate: workout.workoutDate,
+          title: workout.title,
+          status: workout.status,
+          hasResults:
+            Boolean(workout.readinessEntry) ||
+            workout.sections.some((section) => section.items.some((item) => item.result !== null))
+        }));
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const workoutRows = (requireSupabaseResult(
+      await supabase
+        .from("assigned_workouts")
+        .select("id, workout_date, title, status")
+        .eq("athlete_id", athleteId)
+        .order("workout_date"),
+      "Unable to load athlete workouts for import."
+    ) ?? []) as Array<{
+      id: string;
+      workout_date: string;
+      title: string;
+      status: ExistingImportWorkout["status"];
+    }>;
+
+    if (workoutRows.length === 0) {
+      return [];
+    }
+
+    const workoutIds = workoutRows.map((row) => row.id);
+    const sectionRows = (requireSupabaseResult(
+      await supabase
+        .from("assigned_workout_sections")
+        .select("id, assigned_workout_id")
+        .in("assigned_workout_id", workoutIds),
+      "Unable to load workout sections for import."
+    ) ?? []) as Array<{
+      id: string;
+      assigned_workout_id: string;
+    }>;
+
+    const sectionIds = sectionRows.map((row) => row.id);
+    const itemRows =
+      sectionIds.length > 0
+        ? ((requireSupabaseResult(
+            await supabase
+              .from("assigned_workout_items")
+              .select("id, assigned_workout_section_id")
+              .in("assigned_workout_section_id", sectionIds),
+            "Unable to load workout items for import."
+          ) ?? []) as Array<{
+            id: string;
+            assigned_workout_section_id: string;
+          }>)
+        : [];
+
+    const itemIds = itemRows.map((row) => row.id);
+    const resultsRows =
+      itemIds.length > 0
+        ? ((requireSupabaseResult(
+            await supabase
+              .from("workout_item_results")
+              .select("assigned_workout_item_id")
+              .eq("athlete_id", athleteId)
+              .in("assigned_workout_item_id", itemIds),
+            "Unable to load workout results for import."
+          ) ?? []) as Array<{
+            assigned_workout_item_id: string;
+          }>)
+        : [];
+
+    const readinessRows =
+      workoutIds.length > 0
+        ? ((requireSupabaseResult(
+            await supabase
+              .from("athlete_readiness_logs")
+              .select("assigned_workout_id")
+              .eq("athlete_id", athleteId)
+              .in("assigned_workout_id", workoutIds),
+            "Unable to load readiness logs for import."
+          ) ?? []) as Array<{
+            assigned_workout_id: string | null;
+          }>)
+        : [];
+
+    const workoutIdBySectionId = new Map(sectionRows.map((row) => [row.id, row.assigned_workout_id]));
+    const workoutIdByItemId = new Map(
+      itemRows.map((row) => [row.id, workoutIdBySectionId.get(row.assigned_workout_section_id) ?? null])
+    );
+    const workoutsWithResults = new Set<string>();
+
+    for (const row of resultsRows) {
+      const workoutId = workoutIdByItemId.get(row.assigned_workout_item_id);
+
+      if (workoutId) {
+        workoutsWithResults.add(workoutId);
+      }
+    }
+
+    for (const row of readinessRows) {
+      if (row.assigned_workout_id) {
+        workoutsWithResults.add(row.assigned_workout_id);
+      }
+    }
+
+    return workoutRows.map((row) => ({
+      id: row.id,
+      workoutDate: row.workout_date,
+      title: row.title,
+      status: row.status,
+      hasResults: workoutsWithResults.has(row.id)
+    }));
+  }
 );
