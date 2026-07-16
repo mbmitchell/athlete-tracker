@@ -13,6 +13,11 @@ import {
   resendAthleteInvitation
 } from "@/lib/athletes/account-links.server";
 import { canManageAthleteAccounts } from "@/lib/athletes/account-management";
+import {
+  classifyAthleteProfileCreateError,
+  summarizeAthleteProfileValidationIssues,
+  type AthleteProfileCreateErrorCode
+} from "@/lib/athletes/profile-save-errors";
 import { getAppViewer } from "@/lib/auth/session";
 import { getSupabaseConfig, isSupabaseServiceRoleConfigured } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -64,6 +69,33 @@ function ensureAccountMutationsConfigured(athleteId: string) {
   }
 }
 
+function redirectToAthleteCreateError(errorCode: AthleteProfileCreateErrorCode): never {
+  return redirect(`/athletes/new?error=${encodeURIComponent(errorCode)}`);
+}
+
+function logAthleteCreateFailure(params: {
+  viewerId: string;
+  viewerRole: string;
+  errorCode: AthleteProfileCreateErrorCode;
+  supabaseError?: {
+    code?: string | null;
+    message?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  };
+  validationIssues?: string[];
+  payload?: Record<string, unknown>;
+}) {
+  console.error("Athlete create failed", {
+    viewerId: params.viewerId,
+    viewerRole: params.viewerRole,
+    errorCode: params.errorCode,
+    validationIssues: params.validationIssues,
+    payload: params.payload,
+    supabaseError: params.supabaseError
+  });
+}
+
 export async function saveAthleteProfileAction(formData: FormData) {
   const viewer = ensureAdminViewer(await getAppViewer());
   const parsed = athleteProfileSchema.safeParse({
@@ -87,7 +119,15 @@ export async function saveAthleteProfileAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirect("/athletes?error=invalid_athlete_profile");
+    const validationIssues = summarizeAthleteProfileValidationIssues(parsed.error);
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "invalid_athlete_profile",
+      validationIssues
+    });
+
+    redirectToAthleteCreateError("invalid_athlete_profile");
   }
 
   if (!getSupabaseConfig()) {
@@ -117,6 +157,78 @@ export async function saveAthleteProfileAction(formData: FormData) {
     active: input.activeStatus === "active"
   };
 
+  const { data: profile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id, email, role")
+    .eq("id", viewer.id)
+    .maybeSingle();
+
+  if (profileError) {
+    const errorCode = classifyAthleteProfileCreateError(profileError);
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode,
+      payload: {
+        managedBy: payload.managed_by,
+        graduationYear: payload.graduation_year
+      },
+      supabaseError: {
+        code: profileError.code,
+        message: profileError.message,
+        details: profileError.details,
+        hint: profileError.hint
+      }
+    });
+
+    redirectToAthleteCreateError(errorCode);
+  }
+
+  if (!profile) {
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "missing_user_profile",
+      payload: {
+        managedBy: payload.managed_by,
+        graduationYear: payload.graduation_year
+      }
+    });
+
+    redirectToAthleteCreateError("missing_user_profile");
+  }
+
+  const resolvedProfile = profile;
+
+  if (!resolvedProfile.email || !resolvedProfile.role) {
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "incomplete_user_profile",
+      payload: {
+        managedBy: payload.managed_by,
+        graduationYear: payload.graduation_year
+      }
+    });
+
+    redirectToAthleteCreateError("incomplete_user_profile");
+  }
+
+  if (resolvedProfile.role !== "admin") {
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode: "admin_role_mismatch",
+      payload: {
+        managedBy: payload.managed_by,
+        profileRole: resolvedProfile.role,
+        graduationYear: payload.graduation_year
+      }
+    });
+
+    redirectToAthleteCreateError("admin_role_mismatch");
+  }
+
   if (input.athleteId) {
     const { error } = await supabase.from("athletes").update(payload).eq("id", input.athleteId);
 
@@ -131,13 +243,37 @@ export async function saveAthleteProfileAction(formData: FormData) {
   const { data, error } = await supabase.from("athletes").insert(payload).select("id").single();
 
   if (error || !data) {
-    redirect("/athletes/new?error=create_failed");
+    const errorCode = error ? classifyAthleteProfileCreateError(error) : "create_failed";
+    logAthleteCreateFailure({
+      viewerId: viewer.id,
+      viewerRole: viewer.role,
+      errorCode,
+      payload: {
+        managedBy: payload.managed_by,
+        profileRole: resolvedProfile.role,
+        graduationYear: payload.graduation_year,
+        hasDateOfBirth: Boolean(payload.date_of_birth),
+        active: payload.active
+      },
+      supabaseError: error
+        ? {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          }
+        : undefined
+    });
+
+    redirectToAthleteCreateError(errorCode);
   }
+
+  const createdAthlete = data;
 
   revalidatePath("/admin");
   revalidatePath("/admin/setup");
   revalidatePath("/athletes");
-  redirect(`/athletes/${data.id}/edit?status=created`);
+  redirect(`/athletes/${createdAthlete.id}/edit?status=created`);
 }
 
 export async function inviteAthleteAccountAction(formData: FormData) {

@@ -22,7 +22,23 @@ const profileMessageMap = {
   saved: "Athlete profile saved.",
   demo_mode: "Demo mode is active. Changes are not saved.",
   save_failed: "The athlete profile could not be saved.",
-  create_failed: "The athlete profile could not be created."
+  create_failed: "The athlete profile could not be created.",
+  invalid_athlete_profile:
+    "Review the required athlete fields and make sure graduation year and core profile details are valid.",
+  athlete_required_field_missing:
+    "A required athlete field was missing before the record reached the database. Review the profile inputs and try again.",
+  missing_organization_context:
+    "The database reported missing organization context, but this app schema does not currently define organization-scoped athlete creation.",
+  missing_user_profile:
+    "Your signed-in account is missing the required user profile row in Supabase. Create or repair the matching user_profiles record, then try again.",
+  incomplete_user_profile:
+    "Your signed-in account has an incomplete user profile in Supabase. Confirm the user_profiles row has the expected email and role values.",
+  admin_role_mismatch:
+    "Your signed-in account is not recognized as an admin in the database. Verify the user_profiles role is set to admin.",
+  athlete_create_rls_denied:
+    "Supabase row-level security blocked athlete creation. Verify the signed-in database role is admin and that managed_by matches your auth user.",
+  athlete_invalid_identifier:
+    "Supabase rejected one of the identifier values. Confirm the signed-in admin user is valid and the request data is well-formed."
 } as const;
 
 export function AthleteForm({ athlete, mode, feedback }: AthleteFormProps) {
