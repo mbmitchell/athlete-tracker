@@ -385,6 +385,30 @@ export function ImportPlanManager({
           </CardContent>
         </Card>
 
+        {preview?.errors.length ? (
+          <Card className="border-rose-200 bg-rose-50/70">
+            <CardHeader>
+              <CardTitle className="text-rose-900">Current parser errors</CardTitle>
+              <CardDescription className="text-rose-700">
+                {preview.errors.length} error{preview.errors.length === 1 ? "" : "s"} found in the pasted plan. Fix these lines, then parse again.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {preview.errors.map((issue, index) => (
+                  <div className="rounded-2xl border border-rose-200 bg-white p-3 text-sm" key={`${issue.lineNumber}-${issue.field}-${index}`}>
+                    <p className="font-semibold text-rose-900">
+                      Line {issue.lineNumber} · {issue.field}
+                    </p>
+                    <p className="mt-1 text-rose-800">{issue.message}</p>
+                    <p className="mt-2 font-mono text-xs text-rose-700">{issue.originalLine || "(blank line)"}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <div className="space-y-6">
           <Card>
             <CardHeader>
