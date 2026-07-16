@@ -2,10 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, CalendarDays, ClipboardList, Home, Users } from "lucide-react";
+import {
+  BookOpen,
+  CalendarDays,
+  ClipboardList,
+  Home,
+  Settings,
+  Users,
+  type LucideIcon
+} from "lucide-react";
 
 import { getNavigationItems } from "@/lib/auth/navigation";
-import type { UserRole } from "@/lib/types/domain";
+import type { NavigationItem, UserRole } from "@/lib/types/domain";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
@@ -13,8 +21,9 @@ const iconMap = {
   users: Users,
   calendar: CalendarDays,
   clipboard: ClipboardList,
-  book: BookOpen
-};
+  book: BookOpen,
+  settings: Settings
+} satisfies Record<NavigationItem["icon"], LucideIcon>;
 
 type MobileNavProps = {
   role: UserRole;
