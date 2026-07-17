@@ -11,7 +11,7 @@ import {
   normalizeAthleteLoginStatus,
   validateAthleteAccountLink
 } from "@/lib/athletes/account-management";
-import { getAppUrl } from "@/lib/env";
+import { getAthleteInvitationRedirectUrl } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireSupabaseResult } from "@/lib/supabase/errors";
 
@@ -156,6 +156,32 @@ async function attachAthleteMetadata(user: User, athleteId: string, fullName: st
   }
 }
 
+function buildAthleteInviteOptions(athleteId: string, fullName: string) {
+  return {
+    data: buildAthleteUserMetadata({
+      athleteId,
+      fullName
+    }),
+    redirectTo: getAthleteInvitationRedirectUrl()
+  };
+}
+
+async function sendAthleteInvitationEmail(params: {
+  email: string;
+  athleteId: string;
+  fullName: string;
+}) {
+  const admin = createSupabaseAdminClient();
+  const inviteOptions = buildAthleteInviteOptions(params.athleteId, params.fullName);
+
+  console.info("[athlete-account] invitation redirect URL", {
+    athleteId: params.athleteId,
+    redirectTo: inviteOptions.redirectTo
+  });
+
+  return admin.auth.admin.inviteUserByEmail(params.email, inviteOptions);
+}
+
 export async function inviteAthleteAccount(params: {
   viewerId: string;
   athleteId: string;
@@ -176,12 +202,10 @@ export async function inviteAthleteAccount(params: {
   }
 
   const fullName = `${athlete.first_name} ${athlete.last_name}`;
-  const inviteResult = await admin.auth.admin.inviteUserByEmail(email, {
-    data: buildAthleteUserMetadata({
-      athleteId: athlete.id,
-      fullName
-    }),
-    redirectTo: `${getAppUrl()}/login`
+  const inviteResult = await sendAthleteInvitationEmail({
+    email,
+    athleteId: athlete.id,
+    fullName
   });
 
   if (inviteResult.error) {
@@ -223,20 +247,18 @@ export async function resendAthleteInvitation(params: {
     fail("invite_not_pending");
   }
 
-  const admin = createSupabaseAdminClient();
   const fullName = `${athlete.first_name} ${athlete.last_name}`;
-  const result = await admin.auth.admin.inviteUserByEmail(email, {
-    data: buildAthleteUserMetadata({
-      athleteId: athlete.id,
-      fullName
-    }),
-    redirectTo: `${getAppUrl()}/login`
+  const result = await sendAthleteInvitationEmail({
+    email,
+    athleteId: athlete.id,
+    fullName
   });
 
   if (result.error) {
     fail("invite_failed", result.error.message);
   }
 
+  const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("athletes")
     .update({ invited_at: new Date().toISOString() })

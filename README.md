@@ -206,7 +206,8 @@ Configured-production behavior:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
-4. Set `NEXT_PUBLIC_APP_URL` to your production app URL.
+4. Set `NEXT_PUBLIC_APP_URL` to your production site origin only, without `/login` or a trailing slash.
+   For this deployment, use `https://athlete-tracker-two.vercel.app`.
 5. Redeploy after saving environment variables.
 6. Apply the same SQL migrations to the production Supabase project.
 7. Create or promote your first admin user in the production Supabase project.
