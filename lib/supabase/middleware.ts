@@ -1,15 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import {
+  isPublicAssetPath,
+  resolveProxyRedirect
+} from "@/lib/auth/routing";
 import type { Database } from "@/lib/types/database";
 import { getSupabaseConfig } from "@/lib/env";
-
-const protectedPrefixes = ["/admin", "/athlete", "/athletes", "/calendar", "/workouts"];
-const publicRoutes = new Set(["/", "/login"]);
-
-function isProtectedPath(pathname: string): boolean {
-  return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-}
 
 export async function updateSession(request: NextRequest) {
   const config = getSupabaseConfig();
@@ -40,16 +37,28 @@ export async function updateSession(request: NextRequest) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (user && publicRoutes.has(request.nextUrl.pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+  if (isPublicAssetPath(request.nextUrl.pathname)) {
+    return response;
   }
 
-  if (!user && isProtectedPath(request.nextUrl.pathname)) {
+  const redirectDecision = resolveProxyRedirect({
+    pathname: request.nextUrl.pathname,
+    hasUser: Boolean(user)
+  });
+
+  if (redirectDecision) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("redirectTo", request.nextUrl.pathname);
+    const destination = new URL(redirectDecision.destination, request.url);
+
+    url.pathname = destination.pathname;
+    url.search = destination.search;
+
+    console.info("[auth-redirect]", {
+      pathname: request.nextUrl.pathname,
+      destination: `${url.pathname}${url.search}`,
+      authStateCategory: redirectDecision.authStateCategory
+    });
+
     return NextResponse.redirect(url);
   }
 

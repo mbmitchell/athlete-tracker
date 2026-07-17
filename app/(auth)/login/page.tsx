@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { InstallHelpPanel } from "@/components/pwa/install-help-panel";
+import { resolveDefaultPathForRole } from "@/lib/auth/roles";
 import { DemoModeBanner } from "@/components/shared/demo-mode-banner";
 import { getAppViewer } from "@/lib/auth/session";
 import { getSupabasePublicConfigStatus } from "@/lib/env";
@@ -14,7 +15,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const viewer = await getAppViewer();
 
   if (viewer) {
-    redirect("/");
+    const destination = resolveDefaultPathForRole(viewer.role);
+
+    console.info("[auth-redirect]", {
+      pathname: "/login",
+      destination,
+      authStateCategory: "authenticated"
+    });
+
+    redirect(destination);
   }
 
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
