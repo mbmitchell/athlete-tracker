@@ -10,6 +10,7 @@ import {
   buildInvitationState,
   canManageAthleteAccounts,
   getViewerAccessState,
+  planAthleteAuthEmailDelivery,
   validateAthleteAccountLink
 } from "@/lib/athletes/account-management";
 import { isDemoMode, getSupabasePublicConfigStatus } from "@/lib/env";
@@ -91,6 +92,42 @@ describe("athlete account management guards", () => {
       reason: "parent_account_not_allowed"
     });
   });
+
+  it("chooses inviteUserByEmail only for athletes without an auth user yet", () => {
+    expect(
+      planAthleteAuthEmailDelivery({
+        athleteStatus: "none",
+        hasExistingAuthUser: false
+      })
+    ).toEqual({
+      method: "inviteUserByEmail",
+      reason: "new_user"
+    });
+  });
+
+  it("uses resetPasswordForEmail for existing pending athlete auth users", () => {
+    expect(
+      planAthleteAuthEmailDelivery({
+        athleteStatus: "invited",
+        hasExistingAuthUser: true
+      })
+    ).toEqual({
+      method: "resetPasswordForEmail",
+      reason: "pending_user"
+    });
+  });
+
+  it("uses resetPasswordForEmail for connected athlete auth users", () => {
+    expect(
+      planAthleteAuthEmailDelivery({
+        athleteStatus: "connected",
+        hasExistingAuthUser: true
+      })
+    ).toEqual({
+      method: "resetPasswordForEmail",
+      reason: "connected_user"
+    });
+  });
 });
 
 describe("athlete access state", () => {
@@ -157,6 +194,20 @@ describe("runtime mode and import boundaries", () => {
       expect(source.includes("@/lib/supabase/admin")).toBe(false);
       expect(source.includes("@/lib/athletes/account-links.server")).toBe(false);
     }
+  });
+
+  it("keeps resend on the recovery/reset path instead of re-inviting existing auth users", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "lib/athletes/account-links.server.ts"),
+      "utf8"
+    );
+    const resendStart = source.indexOf("export async function resendAthleteInvitation");
+    const resendEnd = source.indexOf("export async function connectExistingAthleteAccount");
+    const resendSource = source.slice(resendStart, resendEnd);
+
+    expect(resendSource.includes("sendAthleteAccountEmail")).toBe(true);
+    expect(resendSource.includes("inviteUserByEmail")).toBe(false);
+    expect(source.includes("auth.resetPasswordForEmail")).toBe(true);
   });
 });
 

@@ -51,7 +51,7 @@ describe("athlete invitation redirect wiring", () => {
       "utf8"
     );
 
-    expect(source.match(/await sendAthleteInvitationEmail\(/g)?.length ?? 0).toBe(2);
+    expect(source.match(/await sendAthleteAccountEmail\(/g)?.length ?? 0).toBe(2);
     expect(source.includes("redirectTo: getAthleteInvitationRedirectUrl()")).toBe(true);
     expect(source.includes('redirectTo: `${getAppUrl()}/login`')).toBe(false);
   });

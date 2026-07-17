@@ -3,12 +3,14 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 
 import {
+  type AthleteAuthEmailDeliveryMethod,
   buildAthleteUserMetadata,
   buildConnectedState,
   buildDisabledState,
   buildDisconnectedState,
   buildInvitationState,
   normalizeAthleteLoginStatus,
+  planAthleteAuthEmailDelivery,
   validateAthleteAccountLink
 } from "@/lib/athletes/account-management";
 import { getAthleteInvitationRedirectUrl } from "@/lib/env";
@@ -97,6 +99,17 @@ async function findAuthUserByEmail(email: string): Promise<User | null> {
   }
 }
 
+async function getAuthUserById(userId: string): Promise<User | null> {
+  const admin = createSupabaseAdminClient();
+  const result = await admin.auth.admin.getUserById(userId);
+
+  if (result.error) {
+    throw new Error(`Unable to load Supabase auth user: ${result.error.message}`);
+  }
+
+  return result.data.user ?? null;
+}
+
 async function getUserRole(userId: string): Promise<"admin" | "athlete" | "parent" | null> {
   const admin = createSupabaseAdminClient();
   const profile = requireSupabaseResult(
@@ -166,20 +179,99 @@ function buildAthleteInviteOptions(athleteId: string, fullName: string) {
   };
 }
 
-async function sendAthleteInvitationEmail(params: {
+function logAthleteAuthEmailFailure(params: {
+  athleteId: string;
+  email: string;
+  method: AthleteAuthEmailDeliveryMethod;
+  error: {
+    code?: string;
+    message: string;
+    status?: number;
+  };
+}) {
+  console.error("[athlete-account] auth email delivery failed", {
+    athleteId: params.athleteId,
+    email: params.email,
+    method: params.method,
+    code: params.error.code,
+    message: params.error.message,
+    status: params.error.status
+  });
+}
+
+async function getValidatedAthleteAuthUser(athlete: ManagedAthleteAccountRow): Promise<User> {
+  if (!athlete.user_id) {
+    fail("user_not_found");
+  }
+
+  const authUser = await getAuthUserById(athlete.user_id);
+
+  if (!authUser?.id || !authUser.email) {
+    fail("user_not_found");
+  }
+
+  const validation = validateAthleteAccountLink({
+    athleteId: athlete.id,
+    currentAthleteUserId: athlete.user_id,
+    existingAthleteIdForUser: await getAthleteIdForLinkedUser(authUser.id),
+    targetUserId: authUser.id,
+    targetUserRole: await getUserRole(authUser.id)
+  });
+
+  if (!validation.ok) {
+    fail(validation.reason);
+  }
+
+  return authUser;
+}
+
+async function sendAthleteAccountEmail(params: {
   email: string;
   athleteId: string;
   fullName: string;
+  athleteStatus: "none" | "invited" | "connected";
+  authUser?: User | null;
 }) {
   const admin = createSupabaseAdminClient();
   const inviteOptions = buildAthleteInviteOptions(params.athleteId, params.fullName);
+  const deliveryPlan = planAthleteAuthEmailDelivery({
+    athleteStatus: params.athleteStatus,
+    hasExistingAuthUser: Boolean(params.authUser)
+  });
 
-  console.info("[athlete-account] invitation redirect URL", {
+  if (!deliveryPlan) {
+    fail("account_action_failed");
+  }
+
+  console.info("[athlete-account] auth email redirect URL", {
     athleteId: params.athleteId,
+    method: deliveryPlan.method,
     redirectTo: inviteOptions.redirectTo
   });
 
-  return admin.auth.admin.inviteUserByEmail(params.email, inviteOptions);
+  if (deliveryPlan.method === "inviteUserByEmail") {
+    return admin.auth.admin.inviteUserByEmail(params.email, inviteOptions);
+  }
+
+  const recoveryEmail = normalizeEmail(params.authUser?.email ?? params.email);
+  const result = await admin.auth.resetPasswordForEmail(recoveryEmail, {
+    redirectTo: inviteOptions.redirectTo
+  });
+
+  if (result.error) {
+    logAthleteAuthEmailFailure({
+      athleteId: params.athleteId,
+      email: recoveryEmail,
+      method: deliveryPlan.method,
+      error: {
+        code: "code" in result.error ? result.error.code : undefined,
+        message: result.error.message,
+        status: "status" in result.error ? result.error.status : undefined
+      }
+    });
+  }
+
+  return result;
 }
 
 export async function inviteAthleteAccount(params: {
@@ -202,17 +294,36 @@ export async function inviteAthleteAccount(params: {
   }
 
   const fullName = `${athlete.first_name} ${athlete.last_name}`;
-  const inviteResult = await sendAthleteInvitationEmail({
+  const inviteResult = await sendAthleteAccountEmail({
     email,
     athleteId: athlete.id,
-    fullName
+    fullName,
+    athleteStatus: "none"
   });
 
   if (inviteResult.error) {
+    logAthleteAuthEmailFailure({
+      athleteId: athlete.id,
+      email,
+      method: "inviteUserByEmail",
+      error: {
+        code: "code" in inviteResult.error ? inviteResult.error.code : undefined,
+        message: inviteResult.error.message,
+        status: "status" in inviteResult.error ? inviteResult.error.status : undefined
+      }
+    });
     fail("invite_failed", inviteResult.error.message);
   }
 
-  const invitedUser = inviteResult.data.user ?? (await findAuthUserByEmail(email));
+  let invitedUser: User | null = null;
+
+  if ("user" in inviteResult.data) {
+    invitedUser = inviteResult.data.user as User | null;
+  }
+
+  if (!invitedUser?.id) {
+    invitedUser = await findAuthUserByEmail(email);
+  }
 
   if (!invitedUser?.id) {
     fail("invite_failed");
@@ -241,32 +352,50 @@ export async function resendAthleteInvitation(params: {
   athleteId: string;
 }) {
   const athlete = await getManagedAthleteAccount(params.viewerId, params.athleteId);
-  const email = normalizeEmail(athlete.login_email ?? "");
+  const athleteStatus = normalizeAthleteLoginStatus(athlete.athlete_login_status);
 
-  if (normalizeAthleteLoginStatus(athlete.athlete_login_status) !== "invited" || !email || !athlete.user_id) {
+  if ((athleteStatus !== "invited" && athleteStatus !== "connected") || !athlete.user_id) {
     fail("invite_not_pending");
   }
 
+  const authUser = await getValidatedAthleteAuthUser(athlete);
+  const email = normalizeEmail(authUser.email ?? athlete.login_email ?? "");
+
+  if (!email) {
+    fail("user_not_found");
+  }
+
+  await upsertAthleteProfileRole({
+    userId: authUser.id,
+    email,
+    fullName: `${athlete.first_name} ${athlete.last_name}`
+  });
+  await attachAthleteMetadata(authUser, athlete.id, `${athlete.first_name} ${athlete.last_name}`);
+
   const fullName = `${athlete.first_name} ${athlete.last_name}`;
-  const result = await sendAthleteInvitationEmail({
+  const result = await sendAthleteAccountEmail({
     email,
     athleteId: athlete.id,
-    fullName
+    fullName,
+    athleteStatus,
+    authUser
   });
 
   if (result.error) {
     fail("invite_failed", result.error.message);
   }
 
-  const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("athletes")
-    .update({ invited_at: new Date().toISOString() })
-    .eq("id", athlete.id)
-    .eq("managed_by", params.viewerId);
+  if (athleteStatus === "invited") {
+    const admin = createSupabaseAdminClient();
+    const { error } = await admin
+      .from("athletes")
+      .update({ invited_at: new Date().toISOString() })
+      .eq("id", athlete.id)
+      .eq("managed_by", params.viewerId);
 
-  if (error) {
-    throw new Error(`Unable to refresh the invitation timestamp: ${error.message}`);
+    if (error) {
+      throw new Error(`Unable to refresh the invitation timestamp: ${error.message}`);
+    }
   }
 }
 

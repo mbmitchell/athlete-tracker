@@ -22,6 +22,41 @@ type ValidateLinkOptions = {
   targetUserRole: UserRole | null;
 };
 
+export type AthleteAuthEmailDeliveryMethod = "inviteUserByEmail" | "resetPasswordForEmail";
+
+export function planAthleteAuthEmailDelivery(params: {
+  athleteStatus: AthleteLoginStatus;
+  hasExistingAuthUser: boolean;
+}):
+  | {
+      method: AthleteAuthEmailDeliveryMethod;
+      reason: "new_user" | "pending_user" | "connected_user";
+    }
+  | null {
+  if (!params.hasExistingAuthUser && params.athleteStatus === "none") {
+    return {
+      method: "inviteUserByEmail",
+      reason: "new_user"
+    };
+  }
+
+  if (params.hasExistingAuthUser && params.athleteStatus === "invited") {
+    return {
+      method: "resetPasswordForEmail",
+      reason: "pending_user"
+    };
+  }
+
+  if (params.hasExistingAuthUser && params.athleteStatus === "connected") {
+    return {
+      method: "resetPasswordForEmail",
+      reason: "connected_user"
+    };
+  }
+
+  return null;
+}
+
 export function canManageAthleteAccounts(viewer: Pick<AppViewer, "role"> | null): boolean {
   return viewer?.role === "admin";
 }
